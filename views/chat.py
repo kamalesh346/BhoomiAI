@@ -120,7 +120,18 @@ def render_chat():
                         response += "\n\n📚 *[Answer includes info from government scheme documents]*"
 
                 except Exception as e:
-                    response = f"I'm having trouble connecting right now. Please try again! (Error: {str(e)[:100]})"
+                    # Log the full error for debugging (stdout)
+                    print(f"[Chat Error] {e}")
+                    
+                    if "model_decommissioned" in str(e).lower():
+                        response = "I'm updating my knowledge base right now. Please try again in a moment! 🙏"
+                    elif "rate_limit" in str(e).lower() or "429" in str(e):
+                        response = "I'm a bit busy helping many farmers right now. Could you please send your message again in a few seconds? 🌾"
+                    elif "tool call validation" in str(e).lower() or "function" in str(e).lower():
+                        # This happens when the LLM makes a mistake in tool calling
+                        response = "I'm sorry, I had a small technical glitch while looking that up. Could you please ask your question in a different way? I'm here to help! 🙏"
+                    else:
+                        response = "I'm having a little trouble connecting to my brain right now. Please check your internet or try again in a bit! 🙏"
 
             st.session_state.chat_messages.append({
                 "role": "assistant",

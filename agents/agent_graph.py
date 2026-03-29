@@ -10,12 +10,13 @@ from langgraph.prebuilt import create_react_agent
 from langchain_core.runnables import RunnableConfig
 
 from config import GROQ_API_KEY, GROQ_MIXTRAL
-from tools.retriever_tool import query_knowledge_base
+from tools.retriever_tool import query_rag
 
 # Define the state for our agent
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     farmer_profile: Dict[str, Any]
+    remaining_steps: int
 
 def get_agent_executor():
     """
@@ -28,21 +29,25 @@ def get_agent_executor():
         max_tokens=1024,
     )
 
-    tools = [query_knowledge_base]
+    tools = [query_rag]
 
     system_message = """You are Digital Sarathi, an expert Indian agricultural consultant.
     Your goal is to provide practical, personalized, and empathetic advice to farmers.
     
+    CRITICAL: You MUST use the "Current Farmer Profile" provided below to personalize your response. 
+    DO NOT ask the farmer for information that is already in their profile (like soil type, location, or land size). 
+    If they ask for a recommendation, use the profile details to give a specific answer.
+
     You have access to:
-    1. A knowledge base (via query_knowledge_base tool) for facts about government schemes, subsidies, pest management, and best practices.
-    2. The farmer's profile (provided in context).
+    1. A knowledge base (via query_rag tool) for facts about government schemes, subsidies, pest management, and best practices.
+    2. The farmer's profile (provided below).
     
     Rules:
     - Always personalize your advice based on the farmer's land size, location, water source, and budget.
-    - Ask ONE focused follow-up question at a time to keep the conversation manageable.
+    - If the farmer asks "Which crop is best for my soil?", look at the "Soil Type" in the profile and give a specific recommendation for that soil.
+    - Ask ONE focused follow-up question at a time.
     - Use a friendly, professional, and supportive tone.
     - If you use information from the knowledge base, explain how it specifically applies to the farmer's situation.
-    - If the farmer asks about something not in your tools or profile, use your general expertise but remain grounded in the Indian context.
     
     Current Farmer Profile:
     {farmer_context}
@@ -60,14 +65,14 @@ def get_agent_executor():
             f"- Current Seasons: {', '.join(profile.get('current_seasons', ['Kharif']))}"
         )
 
-    # Note: create_react_agent in latest langgraph expects a list of messages or a string for state_modifier
+    # Note: create_react_agent in latest langgraph uses 'prompt'
     # We will use a function to dynamically inject the farmer context into the system message.
     
-    def state_modifier(state: AgentState) -> List[BaseMessage]:
+    def prompt_modifier(state: AgentState) -> List[BaseMessage]:
         farmer_ctx = _build_farmer_context(state.get("farmer_profile", {}))
         return [SystemMessage(content=system_message.format(farmer_context=farmer_ctx))] + state["messages"]
 
-    agent_executor = create_react_agent(llm, tools, state_modifier=state_modifier)
+    agent_executor = create_react_agent(llm, tools, prompt=prompt_modifier, state_schema=AgentState)
     return agent_executor
 
 def run_agent_interaction(

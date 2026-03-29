@@ -12,8 +12,8 @@ DATA_DIR = BASE_DIR / "data"
 # Get a free key at https://console.groq.com
 GROQ_API_KEY     = os.getenv("GROQ_API_KEY", "")
 GROQ_BASE_URL    = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MIXTRAL     = "mixtral-8x7b-32768"   # primary model
-GROQ_LLAMA       = "llama3-8b-8192"       # fallback model
+GROQ_MIXTRAL     = "llama-3.1-8b-instant"   # primary model
+GROQ_LLAMA       = "llama-3.1-8b-instant"       # fallback model
 
 # Legacy aliases (keep so agent code calling generate_response(model="mixtral") still works)
 LLM_MODEL        = "groq"

@@ -4,6 +4,16 @@ Digital Sarathi v1.0 — Main Streamlit Entry Point
 import streamlit as st
 from pathlib import Path
 import sys
+import logging
+import warnings
+import os
+
+# Suppress the transformers/sentence-transformers/torch warnings
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
 
 # Ensure module path
 sys.path.insert(0, str(Path(__file__).parent))
