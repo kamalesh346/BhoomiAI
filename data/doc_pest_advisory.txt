@@ -1,0 +1,60 @@
+INTEGRATED PEST MANAGEMENT (IPM) GUIDELINES FOR MAJOR CROPS
+
+RICE:
+Common Pests: Brown Plant Hopper (BPH), Stem Borer, Leaf Folder
+Symptoms: Deadheart in young plants, whiteear in older plants, hopper burn
+Management: 
+- Use resistant varieties (MTU 7029, Swarna Sub1)
+- Install light traps to monitor moth populations
+- Apply neem-based pesticides in early stages
+- Maintain 2.5 cm water level to drown eggs
+- Chemical: Chlorpyrifos 20EC at 1.5 L/ha if infestation exceeds ETL
+
+WHEAT:
+Common Diseases: Yellow Rust, Brown Rust, Loose Smut
+Symptoms: Yellow/orange powder on leaves, grain replacement by black spore mass
+Management:
+- Use certified disease-free seeds
+- Seed treatment with Vitavax Power 2.5g/kg seed
+- Foliar spray of Propiconazole 25EC at 0.1% at flag leaf stage
+
+COTTON:
+Common Pests: Bollworms (American, Spotted, Pink), Whitefly, Aphids
+Symptoms: Square/boll shedding, curling of leaves, sticky leaves
+Management:
+- Use Bt cotton varieties for bollworm management
+- Install pheromone traps (5/acre for bollworm monitoring)
+- Spray neem oil 3% + garlic extract for early infestation
+- Chemical: Spinosad 45SC at 0.05% for bollworms
+
+VEGETABLES (Tomato, Chilli, Brinjal):
+Common Issues: Early Blight, Late Blight, Fruit Borer, Leaf Curl Virus
+Management:
+- Use virus-resistant varieties
+- Install yellow sticky traps for whitefly/aphid monitoring
+- Copper fungicide for fungal diseases
+- Remove and destroy infected plants immediately
+
+PULSES (Dal crops):
+Common Pests: Aphids, Thrips, Pod Borer, Stem Fly
+Management:
+- Seed treatment with Imidacloprid 70WS
+- Spray Profenofos 50EC for pod borer
+- Inter-cropping with cereal crops reduces pest incidence
+
+GENERAL ADVISORY:
+- Always monitor fields twice weekly during critical growth stages
+- Follow label instructions for all pesticide applications
+- Maintain spray records for each application
+- Use personal protective equipment (PPE) during spraying
+- Follow pre-harvest interval (PHI) strictly
+
+NATIONAL PEST SURVEILLANCE SYSTEM: 
+SMS alerts available - Register at npss.icar.gov.in
+Kisan Call Centre: 1800-180-1551
+
+WARNING SIGNS REQUIRING IMMEDIATE ACTION:
+- More than 20% leaf area damaged
+- More than 5% infestation in pulse crops
+- Sudden wilting of plants in patches
+- Presence of locusts or armyworms (report immediately to district agriculture office)
