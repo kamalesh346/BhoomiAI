@@ -1,0 +1,165 @@
+import streamlit as st
+from db.database import get_farmer, create_new_chat_session, update_chat_session
+from agents.consultant import get_initial_greeting
+from agents.agent_graph import run_agent_interaction
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+def _to_langchain_messages(messages):
+    """Convert list of dict messages to LangChain BaseMessage objects."""
+    lc_messages = []
+    for m in messages:
+        if m["role"] == "user":
+            lc_messages.append(HumanMessage(content=m["content"]))
+        elif m["role"] == "assistant":
+            lc_messages.append(AIMessage(content=m["content"]))
+    return lc_messages
+
+def render_chat():
+    farmer_id = st.session_state.farmer_id
+    farmer = get_farmer(farmer_id)
+
+    st.markdown("""
+    <div class="main-header">
+        <div style="font-size:2.5rem;">💬</div>
+        <div>
+            <h2 style="margin:0;color:white;">Consultant Chat</h2>
+            <p style="margin:0;opacity:0.8;font-size:0.9rem;">
+                Your personal AI agricultural advisor — ask anything
+            </p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Session setup - Always create a fresh session when first entering the chat page in this navigation
+    if "chat_initialized" not in st.session_state or st.session_state.get("last_nav_page") != "chat":
+        try:
+            session = create_new_chat_session(farmer_id)
+            st.session_state.chat_session_id = session["id"]
+            
+            # Generate fresh greeting
+            greeting = get_initial_greeting(farmer)
+            st.session_state.chat_messages = [{"role": "assistant", "content": greeting}]
+            st.session_state.chat_initialized = True
+            st.session_state.last_nav_page = "chat"
+        except Exception as e:
+            st.session_state.chat_session_id = None
+            st.session_state.chat_messages = [{
+                "role": "assistant",
+                "content": f"Namaste {farmer.get('name', '')}! 🙏 I'm Digital Sarathi, your farming advisor. What crop are you planning for this season?"
+            }]
+            st.session_state.chat_initialized = True
+            st.session_state.last_nav_page = "chat"
+
+    # Suggested questions
+    suggestions = [
+        "Which crop is best for my soil this season?",
+        "What government subsidies can I get?",
+        "How should I manage water if monsoon is delayed?",
+        "What pests should I watch out for?",
+        "Is it good to try organic farming?",
+    ]
+
+    col_chat, col_tips = st.columns([3, 1])
+
+    with col_tips:
+        st.markdown("#### 💡 Quick Questions")
+        for suggestion in suggestions:
+            if st.button(suggestion[:35] + "...", key=f"sug_{suggestion[:15]}",
+                         use_container_width=True):
+                st.session_state.pending_message = suggestion
+
+    with col_chat:
+        # Chat display area
+        chat_container = st.container(height=500)
+        with chat_container:
+            for msg in st.session_state.chat_messages:
+                if msg["role"] == "user":
+                    st.markdown(f"""
+                    <div class="chat-bubble-user">
+                        👨‍🌾 <strong>{farmer.get('name', 'You')}:</strong><br>{msg['content']}
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div class="chat-bubble-bot">
+                        🌾 <strong>Digital Sarathi:</strong><br>{msg['content']}
+                    </div>
+                    """, unsafe_allow_html=True)
+
+        # Input area
+        user_input = st.chat_input("Ask about crops, water, subsidies, pests...")
+
+        # Handle suggestion click
+        if "pending_message" in st.session_state:
+            user_input = st.session_state.pop("pending_message")
+
+        if user_input:
+            # Add user message
+            st.session_state.chat_messages.append({
+                "role": "user",
+                "content": user_input
+            })
+
+            # Generate response
+            with st.spinner("🌾 Digital Sarathi is thinking..."):
+                try:
+                    # Use the new agent graph interaction
+                    lc_history = _to_langchain_messages(st.session_state.chat_messages[:-1])
+                    result = run_agent_interaction(
+                        user_input=user_input,
+                        chat_history=lc_history,
+                        farmer_profile=farmer
+                    )
+                    
+                    response = result["message"]
+                    rag_used = result.get("rag_used", False)
+
+                    if rag_used:
+                        response += "\n\n📚 *[Answer includes info from government scheme documents]*"
+
+                except Exception as e:
+                    # Log the full error for debugging (stdout)
+                    print(f"[Chat Error] {e}")
+                    
+                    if "model_decommissioned" in str(e).lower():
+                        response = "I'm updating my knowledge base right now. Please try again in a moment! 🙏"
+                    elif "rate_limit" in str(e).lower() or "429" in str(e):
+                        response = "I'm a bit busy helping many farmers right now. Could you please send your message again in a few seconds? 🌾"
+                    elif "tool call validation" in str(e).lower() or "function" in str(e).lower():
+                        # This happens when the LLM makes a mistake in tool calling
+                        response = "I'm sorry, I had a small technical glitch while looking that up. Could you please ask your question in a different way? I'm here to help! 🙏"
+                    else:
+                        response = "I'm having a little trouble connecting to my brain right now. Please check your internet or try again in a bit! 🙏"
+
+            st.session_state.chat_messages.append({
+                "role": "assistant",
+                "content": response
+            })
+
+            # Save to DB
+            try:
+                if st.session_state.chat_session_id:
+                    update_chat_session(
+                        st.session_state.chat_session_id,
+                        st.session_state.chat_messages,
+                        {}
+                    )
+            except Exception:
+                pass
+
+            st.rerun()
+
+    # Clear chat button
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        if st.button("🗑️ Clear Chat", use_container_width=True):
+            st.session_state.chat_messages = []
+            greeting = get_initial_greeting(farmer)
+            st.session_state.chat_messages = [{"role": "assistant", "content": greeting}]
+            st.rerun()
+
+    with col2:
+        if st.button("🎯 Get Recommendations", use_container_width=True):
+            st.session_state.page = "dashboard"
+            st.rerun()
