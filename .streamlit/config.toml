@@ -1,0 +1,16 @@
+[server]
+maxUploadSize = 50
+enableXsrfProtection = false
+headless = true
+baseUrlPath = ""
+address = "localhost"
+
+[theme]
+primaryColor = "#4caf50"
+backgroundColor = "#fafaf5"
+secondaryBackgroundColor = "#f0fdf4"
+textColor = "#1a1a1a"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
