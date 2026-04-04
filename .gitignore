@@ -4,3 +4,5 @@ __pycache__/
 .env
 .streamlit/
 *.log
+node_modules/
+frontend/node_modules/

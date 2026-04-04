@@ -4,7 +4,12 @@ MySQL Database Layer for Digital Sarathi
 
 import hashlib
 import json
-from config import DATABASE_URL
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 
 # ─── MySQL URL Parser (FIXED) ────────────────────────────────────────────────
@@ -121,9 +126,21 @@ def init_db():
         farmer_id INT,
         messages TEXT,
         context TEXT,
+        summary TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (farmer_id) REFERENCES farmers(id) ON DELETE CASCADE
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS chat_choices (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        chat_session_id INT,
+        message_id VARCHAR(100),
+        selected_option VARCHAR(10),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (chat_session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
     )
     """)
 
@@ -182,6 +199,12 @@ def create_farmer(name, email, password, location):
     
     cur.close()
     c.close()
+    
+    if row:
+        row = dict(row)
+        for k, v in row.items():
+            if hasattr(v, 'isoformat'):
+                row[k] = v.isoformat()
     return row
 
 
@@ -199,6 +222,11 @@ def login_farmer(email, password):
     cur.close()
     c.close()
 
+    if row:
+        row = dict(row)
+        for k, v in row.items():
+            if hasattr(v, 'isoformat'):
+                row[k] = v.isoformat()
     return row
 
 
@@ -212,6 +240,11 @@ def get_farmer(farmer_id):
     cur.close()
     c.close()
 
+    if row:
+        row = dict(row)
+        for k, v in row.items():
+            if hasattr(v, 'isoformat'):
+                row[k] = v.isoformat()
     return row
 
 
@@ -309,13 +342,17 @@ def create_new_chat_session(farmer_id):
     c.close()
 
     # Ensure messages/context are dicts/lists
-    row = dict(row)
-    for field in ("messages", "context"):
-        if isinstance(row.get(field), str):
-            try:
-                row[field] = json.loads(row[field])
-            except:
-                row[field] = [] if field == "messages" else {}
+    if row:
+        row = dict(row)
+        for k, v in row.items():
+            if hasattr(v, 'isoformat'):
+                row[k] = v.isoformat()
+        for field in ("messages", "context"):
+            if isinstance(row.get(field), str):
+                try:
+                    row[field] = json.loads(row[field])
+                except:
+                    row[field] = [] if field == "messages" else {}
     return row
 
 
