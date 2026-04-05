@@ -1,4 +1,4 @@
-add multilingual property
+add multilingual property - do it after completing all 4 phases down
 # Digital Sarathi: 8-Agent Architecture Implementation Plan
 
 ## Objective

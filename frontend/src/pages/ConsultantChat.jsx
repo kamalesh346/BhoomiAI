@@ -120,6 +120,7 @@ export default function ConsultantChat() {
                   role={msg.role} 
                   content={msg.content} 
                   metrics={msg.metrics}
+                  agents={msg.agents}
                 />
                 
                 {/* Render Options if they exist on an assistant message */}

@@ -4,10 +4,10 @@ from db.database import _conn, create_new_chat_session, update_chat_session
 from api.agents.graph import agent_graph
 from api.agents.state import AgentState
 
-def get_session_state(session_id: int) -> tuple[list, str]:
+def get_session_state(session_id: int) -> tuple[list, str, dict]:
     c = _conn()
     cur = c.cursor()
-    cur.execute("SELECT messages, summary FROM chat_sessions WHERE id=%s", (session_id,))
+    cur.execute("SELECT messages, summary, context FROM chat_sessions WHERE id=%s", (session_id,))
     row = cur.fetchone()
     cur.close()
     c.close()
@@ -16,12 +16,21 @@ def get_session_state(session_id: int) -> tuple[list, str]:
     
     messages = row.get("messages")
     if isinstance(messages, str):
-        messages = json.loads(messages)
+        try: messages = json.loads(messages)
+        except: messages = []
     if not isinstance(messages, list):
         messages = []
         
     summary = row.get("summary", "")
-    return messages, summary
+    
+    context = row.get("context")
+    if isinstance(context, str):
+        try: context = json.loads(context)
+        except: context = {}
+    if not isinstance(context, dict):
+        context = {}
+        
+    return messages, summary, context
 
 def handle_chat_start(farmer_id: int) -> Dict[str, Any]:
     session = create_new_chat_session(farmer_id)
@@ -30,9 +39,12 @@ def handle_chat_start(farmer_id: int) -> Dict[str, Any]:
         farmer_id=farmer_id,
         session_id=session["id"],
         farmer_profile={},
+        pest_history=[],
         past_summary="",
         past_choices=[],
         messages=[],
+        candidate_crops=[],
+        viable_candidates=[],
         user_input=None,
         selected_option=None,
         message_id=None,
@@ -42,8 +54,9 @@ def handle_chat_start(farmer_id: int) -> Dict[str, Any]:
     
     final_state = agent_graph.invoke(initial_state)
     
-    # Save back to DB
-    update_chat_session(session["id"], final_state["messages"], {})
+    # Save back to DB including the pre-computed candidates in context
+    context = {"viable_candidates": final_state.get("viable_candidates", [])}
+    update_chat_session(session["id"], final_state["messages"], context)
     
     return {
         "session_id": session["id"],
@@ -51,29 +64,39 @@ def handle_chat_start(farmer_id: int) -> Dict[str, Any]:
     }
 
 def handle_chat_message(farmer_id: int, session_id: int, message: str) -> Dict[str, Any]:
-    messages, summary = get_session_state(session_id)
+    messages, summary, context = get_session_state(session_id)
     
     initial_state = AgentState(
         farmer_id=farmer_id,
         session_id=session_id,
         farmer_profile={},
+        pest_history=[],
         past_summary=summary,
         past_choices=[],
         messages=messages,
+        candidate_crops=[],
+        viable_candidates=context.get("viable_candidates", []),
         user_input=message,
         selected_option=None,
         message_id=None,
         ai_response=None,
-        metrics=None
+        metrics=None,
+        rerun_required=False
     )
     
     final_state = agent_graph.invoke(initial_state)
     
-    # Save to DB
+    # Use update_chat_session for safe serialization and include summary
+    new_context = context.copy()
+    if final_state.get("viable_candidates"):
+        new_context["viable_candidates"] = final_state["viable_candidates"]
+    
+    update_chat_session(session_id, final_state["messages"], new_context)
+    
+    # Manually update summary as update_chat_session doesn't handle it
     c = _conn()
     cur = c.cursor()
-    cur.execute("UPDATE chat_sessions SET messages=%s, summary=%s WHERE id=%s", 
-                (json.dumps(final_state["messages"]), final_state["past_summary"], session_id))
+    cur.execute("UPDATE chat_sessions SET summary=%s WHERE id=%s", (final_state["past_summary"], session_id))
     c.commit()
     cur.close()
     c.close()
@@ -81,15 +104,18 @@ def handle_chat_message(farmer_id: int, session_id: int, message: str) -> Dict[s
     return {"message": final_state["ai_response"]}
 
 def handle_chat_choice(farmer_id: int, session_id: int, message_id: str, selected_option: str) -> Dict[str, Any]:
-    messages, summary = get_session_state(session_id)
+    messages, summary, context = get_session_state(session_id)
     
     initial_state = AgentState(
         farmer_id=farmer_id,
         session_id=session_id,
         farmer_profile={},
+        pest_history=[],
         past_summary=summary,
         past_choices=[],
         messages=messages,
+        candidate_crops=[],
+        viable_candidates=context.get("viable_candidates", []),
         user_input=None,
         selected_option=selected_option,
         message_id=message_id,
@@ -99,11 +125,12 @@ def handle_chat_choice(farmer_id: int, session_id: int, message_id: str, selecte
     
     final_state = agent_graph.invoke(initial_state)
     
-    # Save to DB
+    # Use update_chat_session for safe serialization and include summary
+    update_chat_session(session_id, final_state["messages"], context)
+    
     c = _conn()
     cur = c.cursor()
-    cur.execute("UPDATE chat_sessions SET messages=%s, summary=%s WHERE id=%s", 
-                (json.dumps(final_state["messages"]), final_state["past_summary"], session_id))
+    cur.execute("UPDATE chat_sessions SET summary=%s WHERE id=%s", (final_state["past_summary"], session_id))
     c.commit()
     cur.close()
     c.close()

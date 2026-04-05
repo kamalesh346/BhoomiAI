@@ -3,6 +3,8 @@ from api.agents.state import AgentState
 from api.agents.nodes import entry_node, recommendation_node, decision_node, reasoning_node, memory_node
 
 def route_from_entry(state: AgentState) -> str:
+    if state.get("rerun_required"):
+        return "recommendation_node"
     if state.get("selected_option"):
         return "decision_node"
     elif state.get("user_input"):

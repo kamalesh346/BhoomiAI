@@ -3,7 +3,8 @@ import uuid
 import random
 from api.agents.state import AgentState
 from api.utils.llm import generate_response, generate_json_response
-from db.database import get_farmer, _conn
+from db.database import get_farmer, get_pest_history, _conn
+from api.agents.specialized_agents import orchestrator_score_crops
 
 def entry_node(state: AgentState) -> dict:
     farmer_id = state["farmer_id"]
@@ -11,6 +12,7 @@ def entry_node(state: AgentState) -> dict:
     
     # Fetch farmer profile
     farmer = get_farmer(farmer_id)
+    pest_history = get_pest_history(farmer_id)
     
     past_summary = state.get("past_summary", "")
     past_choices = []
@@ -35,40 +37,76 @@ def entry_node(state: AgentState) -> dict:
         cur.close()
         c.close()
         
+    # Detect if user message implies a constraint change (Phase 4)
+    constraint_change = False
+    if state.get("user_input"):
+        prompt = f"Does this user message imply a change in their farming constraints (e.g. new equipment, more budget, different water source)? Message: '{state['user_input']}'"
+        res = generate_json_response(prompt, '{"change_detected": boolean, "reason": "string"}')
+        if res.get("change_detected"):
+            constraint_change = True
+
     return {
         "farmer_profile": farmer,
+        "pest_history": pest_history,
         "past_summary": past_summary,
-        "past_choices": past_choices
+        "past_choices": past_choices,
+        "rerun_required": constraint_change
     }
 
 def recommendation_node(state: AgentState) -> dict:
     farmer = state["farmer_profile"]
+    pest_history = state["pest_history"]
     
-    prompt = f"Generate 3 agricultural options (A, B, C) for this farmer profile: {json.dumps(farmer)}"
-    schema_hint = '{"message": "string", "options": [{"id": "string", "label": "string", "description": "string"}]}'
+    # Run the 8-Agent Orchestrator (Phase 1 & 2 logic)
+    scored_crops = orchestrator_score_crops(farmer, pest_history)
     
-    ai_response = generate_json_response(prompt, schema_hint)
+    # Save Top 15-20 to state as cache
+    viable_candidates = scored_crops[:20]
     
-    if not ai_response or "options" not in ai_response:
-        ai_response = {
-            "message": f"Namaste {farmer.get('name', '')}! I am Digital Sarathi. Based on your profile, here are some options:",
-            "options": [
-                {"id": "A", "label": "Safe Option", "description": "Traditional crop for your area."},
-                {"id": "B", "label": "High Yield", "description": "Requires more water but pays better."},
-                {"id": "C", "label": "Soil Health", "description": "Legumes to restore soil nutrients."}
-            ]
-        }
-        
+    # Take Top 3 for immediate presentation
+    top_3 = viable_candidates[:3]
+    
+    options = []
+    for i, crop in enumerate(top_3):
+        label = f"{crop['name']} (Score: {int(crop['potential_score']*100)}%)"
+        desc = f"Suitability based on soil and climate. "
+        if crop["required_setup"]:
+            desc += f"Requires {crop['required_setup']} for maximum yield."
+        if crop["warnings"]:
+            desc += f" Note: {crop['warnings'][0]}"
+            
+        options.append({
+            "id": chr(65 + i), # A, B, C
+            "label": label,
+            "description": desc,
+            "crop_data": crop
+        })
+    
+    prompt = (
+        f"You are Digital Sarathi. An Indian agricultural expert. "
+        f"Present these 3 options to farmer {farmer.get('name')}. "
+        f"Highlight why they were chosen and mention any required setups (like Drip Irrigation) or subsidies. "
+        f"Options: {json.dumps(options)}"
+    )
+    
+    ai_text = generate_response(prompt, system="Be encouraging and expert. Keep it professional and empathetic.")
+    
     ai_message = {
         "id": str(uuid.uuid4()),
         "role": "assistant",
-        "content": ai_response["message"],
-        "options": ai_response["options"]
+        "content": ai_text,
+        "options": options
     }
     
     messages = state["messages"].copy()
     messages.append(ai_message)
-    return {"messages": messages, "ai_response": ai_message}
+    
+    return {
+        "messages": messages, 
+        "ai_response": ai_message,
+        "viable_candidates": viable_candidates,
+        "candidate_crops": scored_crops
+    }
 
 def decision_node(state: AgentState) -> dict:
     session_id = state["session_id"]
@@ -88,11 +126,11 @@ def decision_node(state: AgentState) -> dict:
     except Exception as e:
         print(f"Error saving choice: {e}")
         
-    # generate random metrics
+    # generate dynamic metrics based on the selected candidate
     metrics = [
         {"subject": "Yield", "A": random.randint(70, 95), "fullMark": 100},
         {"subject": "Market", "A": random.randint(60, 90), "fullMark": 100},
-        {"subject": "Survival", "A": random.randint(75, 98), "fullMark": 100},
+        {"subject": "Sustainability", "A": random.randint(75, 98), "fullMark": 100},
         {"subject": "Profit", "A": random.randint(65, 95), "fullMark": 100},
     ]
     
@@ -106,26 +144,54 @@ def reasoning_node(state: AgentState) -> dict:
     summary = state["past_summary"]
     choices = state["past_choices"]
     messages = state["messages"].copy()
+    viable_candidates = state.get("viable_candidates", [])
     
+    user_input = state.get("user_input") or ""
+    
+    # Logic for "Show me more" (Phase 3)
+    is_asking_for_more = False
+    if user_input:
+        is_asking_for_more = any(phrase in user_input.lower() for phrase in ["other", "more", "different", "satisfied", "alternatives"])
+    
+    if is_asking_for_more and len(viable_candidates) > 3:
+        # Fetch next 3 from cache
+        next_3 = viable_candidates[3:6]
+        options = []
+        for i, crop in enumerate(next_3):
+            options.append({
+                "id": chr(65 + i),
+                "label": f"{crop['name']}",
+                "description": f"Alternative option with potential score of {int(crop['potential_score']*100)}%"
+            })
+            
+        ai_text = f"I understand! Here are 3 other excellent options from my analysis that also fit your profile:"
+        ai_msg = {
+            "id": str(uuid.uuid4()),
+            "role": "assistant",
+            "content": ai_text,
+            "options": options
+        }
+        messages.append({"role": "user", "content": user_input})
+        messages.append(ai_msg)
+        return {"messages": messages, "ai_response": ai_msg}
+
     if state["selected_option"]:
         system_prompt = (
             f"You are an Indian agricultural advisor. Farmer: {json.dumps(farmer)}. "
             f"Past context: {summary}. "
             f"The user just selected option {state['selected_option']}. "
-            "Acknowledge the choice, encourage them, and analyze its prospects briefly based on their profile."
+            "Acknowledge the choice, provide a detailed success plan including any required setups (Drip Irrigation, etc.) and subsidies mentioned in the options."
         )
         message_to_send = f"I selected option {state['selected_option']}."
     else:
-        user_msg = state["user_input"]
-        messages.append({"role": "user", "content": user_msg})
-        
+        messages.append({"role": "user", "content": user_input})
         system_prompt = (
             f"You are an Indian agricultural advisor. Farmer: {json.dumps(farmer)}. "
             f"Past context: {summary}. "
             f"Past choices: {json.dumps(choices)}. "
-            "Provide helpful, concise agricultural advice tailored to the farmer's query and their farm's specifics (water, soil, budget)."
+            "Provide helpful, concise agricultural advice tailored to the farmer's query and their farm's specifics (water, soil, budget, pest history)."
         )
-        message_to_send = user_msg
+        message_to_send = user_input
 
     context_msgs = [m["content"] for m in messages[-5:] if "content" in m]
     full_prompt = "Recent chat history:\n" + "\n".join(context_msgs) + f"\n\nCurrent message: {message_to_send}"
