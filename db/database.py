@@ -82,6 +82,7 @@ def init_db():
         equipment TEXT,
         location VARCHAR(100),
         soil_type VARCHAR(50),
+        soil_type_distribution TEXT,
         npk_n FLOAT,
         npk_p FLOAT,
         npk_k FLOAT,
@@ -183,13 +184,13 @@ def seed_test_data():
 
 
 # ─── CORE FUNCTIONS ─────────────────────────────────────────────────────────
-def create_farmer(name, email, password, location):
+def create_farmer(name, email, password, location, land_size=1.0):
     c = _conn()
     cur = c.cursor()
 
     cur.execute(
-        "INSERT INTO farmers (name,email,password,location) VALUES (%s,%s,%s,%s)",
-        (name, email, _hash(password), location)
+        "INSERT INTO farmers (name,email,password,location,land_size) VALUES (%s,%s,%s,%s,%s)",
+        (name, email, _hash(password), location, land_size)
     )
     fid = cur.lastrowid
     c.commit()
@@ -293,10 +294,18 @@ def get_recommendations(farmer_id, limit=5):
 
 def update_farmer_profile(farmer_id, **kwargs):
     allowed = ["name", "land_size", "water_source", "budget", "risk_level",
-               "equipment", "location", "soil_type", "npk_n", "npk_p", "npk_k", "soil_ph"]
+               "equipment", "location", "soil_type", "soil_type_distribution",
+               "recent_pest_activity", "npk_n", "npk_p", "npk_k", "soil_ph"]
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:
         return
+    
+    # Special handling for equipment and soil_type_distribution if they are lists/dicts
+    if "equipment" in updates and not isinstance(updates["equipment"], str):
+        updates["equipment"] = json.dumps(updates["equipment"])
+    if "soil_type_distribution" in updates and not isinstance(updates["soil_type_distribution"], str):
+        updates["soil_type_distribution"] = json.dumps(updates["soil_type_distribution"])
+
     c = _conn()
     cur = c.cursor()
     cols = ", ".join(f"{k}=%s" for k in updates)
@@ -316,6 +325,30 @@ def get_crop_history(farmer_id):
     c.close()
     return rows or []
 
+def get_pest_history(farmer_id):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("SELECT * FROM pest_history WHERE farmer_id=%s ORDER BY observation_date DESC", (farmer_id,))
+    rows = cur.fetchall()
+    cur.close()
+    c.close()
+    if rows:
+        for row in rows:
+            for k, v in row.items():
+                if hasattr(v, 'isoformat'):
+                    row[k] = v.isoformat()
+    return rows or []
+
+def add_pest_history(farmer_id, pest_name, affected_crop, severity, observation_date, description=""):
+    c = _conn()
+    cur = c.cursor()
+    cur.execute("""
+        INSERT INTO pest_history (farmer_id, pest_name, affected_crop, severity, observation_date, description)
+        VALUES (%s,%s,%s,%s,%s,%s)
+    """, (farmer_id, pest_name, affected_crop, severity, observation_date, description))
+    c.commit()
+    cur.close()
+    c.close()
 
 def add_crop_history(farmer_id, crop, season, year, yield_kg=None, income=None, notes=""):
     c = _conn()
