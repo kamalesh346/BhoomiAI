@@ -21,6 +21,19 @@ const INDIAN_STATES = [
   "Lakshadweep", "Puducherry"
 ];
 
+const LANGUAGES = [
+  { code: "en", name: "English" },
+  { code: "hi", name: "Hindi (हिन्दी)" },
+  { code: "mr", name: "Marathi (मराठी)" },
+  { code: "ta", name: "Tamil (தமிழ்)" },
+  { code: "te", name: "Telugu (తెలుగు)" },
+  { code: "bn", name: "Bengali (বাংলা)" },
+  { code: "gu", name: "Gujarati (ગુજરાતી)" },
+  { code: "kn", name: "Kannada (ಕನ್ನಡ)" },
+  { code: "ml", name: "Malayalam (മലയാളம்)" },
+  { code: "pa", name: "Punjabi (ਪੰਜਾਬੀ)" }
+];
+
 const WATER_SOURCES = [
   "Rain-fed", "Borewell", "Canal", "River", "Open Well", "Drip Irrigation", "Sprinkler System", "Tank/Pond", "Tanker Water", "Treated Waste Water"
 ];
@@ -219,6 +232,19 @@ export default function Profile() {
                       <option value="">Select State</option>
                       {INDIAN_STATES.map(state => (
                         <option key={state} value={state}>{state}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Preferred Language</label>
+                    <select 
+                      name="language_preference" 
+                      value={formData.language_preference || 'en'} 
+                      onChange={handleChange} 
+                      className="input-field border-brand-200 focus:border-brand-500"
+                    >
+                      {LANGUAGES.map(lang => (
+                        <option key={lang.code} value={lang.code}>{lang.name}</option>
                       ))}
                     </select>
                   </div>

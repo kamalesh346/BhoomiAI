@@ -27,6 +27,7 @@ class FarmerProfileUpdate(BaseModel):
     npk_p: Optional[float] = None
     npk_k: Optional[float] = None
     soil_ph: Optional[float] = None
+    language_preference: Optional[str] = None
 
 class PestHistoryCreate(BaseModel):
     pest_name: str
@@ -37,14 +38,17 @@ class PestHistoryCreate(BaseModel):
 
 class ChatStartRequest(BaseModel):
     farmer_id: Union[int, str]
+    language: Optional[str] = "en"
 
 class ChatMessageRequest(BaseModel):
     farmer_id: Union[int, str]
     chat_session_id: Union[int, str]
     message: str
+    language: Optional[str] = "en"
 
 class ChatChoiceRequest(BaseModel):
     farmer_id: Union[int, str]
     chat_session_id: Union[int, str]
     message_id: str
     selected_option: str
+    language: Optional[str] = "en"

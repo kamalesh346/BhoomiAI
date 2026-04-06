@@ -1,3 +1,4 @@
+previous commit "before multilinguality"
 # BhoomiAI: Multilingual & Robust Memory Implementation Plan
 
 ## 🧭 Core Principle

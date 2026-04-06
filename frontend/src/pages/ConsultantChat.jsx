@@ -28,9 +28,9 @@ export default function ConsultantChat() {
     const existingSession = localStorage.getItem('chat_session_id');
     if (existingSession) {
       setSessionId(parseInt(existingSession));
-      loadHistory(parseInt(existingSession));
+      loadHistory(parseInt(existingSession), parsedFarmer.language_preference || 'en');
     } else {
-      initChat(parsedFarmer.id);
+      initChat(parsedFarmer.id, parsedFarmer.language_preference || 'en');
     }
   }, [navigate]);
 
@@ -38,20 +38,22 @@ export default function ConsultantChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  const loadHistory = async (sid) => {
+  const loadHistory = async (sid, lang = 'en') => {
     try {
-      const res = await getChatHistory(sid);
+      const res = await getChatHistory(sid, lang);
       setMessages(res.data.messages);
     } catch (e) {
       // If session not found, start new
-      initChat(farmer.id);
+      const data = localStorage.getItem('farmer');
+      const parsedFarmer = data ? JSON.parse(data) : null;
+      initChat(farmer?.id || parsedFarmer?.id, farmer?.language_preference || parsedFarmer?.language_preference || 'en');
     }
   };
 
-  const initChat = async (fid) => {
+  const initChat = async (fid, lang = 'en') => {
     setIsLoading(true);
     try {
-      const res = await startChat(fid);
+      const res = await startChat(fid, lang);
       setSessionId(res.data.session_id);
       localStorage.setItem('chat_session_id', res.data.session_id);
       setMessages([res.data.message]);
@@ -72,7 +74,8 @@ export default function ConsultantChat() {
     setIsLoading(true);
 
     try {
-      const res = await sendChatMessage(farmer.id, sessionId, userMsg.content);
+      const lang = farmer.language_preference || 'en';
+      const res = await sendChatMessage(farmer.id, sessionId, userMsg.content, lang);
       setMessages(prev => [...prev, res.data.message]);
     } catch (e) {
       console.error('Failed to send message', e);
@@ -84,9 +87,8 @@ export default function ConsultantChat() {
   const handleOptionSelect = async (messageId, optionId) => {
     setIsLoading(true);
     try {
-      const res = await sendChatChoice(farmer.id, sessionId, messageId, optionId);
-      // The backend returns the new assistant message in res.data.message
-      // which now includes the metrics for the radar chart
+      const lang = farmer.language_preference || 'en';
+      const res = await sendChatChoice(farmer.id, sessionId, messageId, optionId, lang);
       setMessages(prev => [
         ...prev, 
         { role: 'user', content: `I selected option ${optionId}.` }, 
@@ -106,9 +108,16 @@ export default function ConsultantChat() {
       <Sidebar />
       <main className="flex flex-col flex-1 relative h-full">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200 px-8 py-4 shadow-sm z-10">
-          <h1 className="text-2xl font-bold text-gray-900">Consultant Chat</h1>
-          <p className="text-sm text-gray-500">Your AI-powered farming advisor</p>
+        <header className="bg-white border-b border-gray-200 px-8 py-4 shadow-sm z-10 flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Consultant Chat</h1>
+            <p className="text-sm text-gray-500">Your AI-powered farming advisor</p>
+          </div>
+          {farmer.language_preference && farmer.language_preference !== 'en' && (
+            <span className="px-3 py-1 bg-brand-100 text-brand-700 text-xs font-bold rounded-full uppercase">
+              Mode: {farmer.language_preference}
+            </span>
+          )}
         </header>
 
         {/* Chat Area */}

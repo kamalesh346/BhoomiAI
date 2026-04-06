@@ -82,7 +82,8 @@ def recommendation_node(state: AgentState) -> dict:
     system_msg = (
         "You are BhoomiAI. Greet the farmer ONLY if this is the start of the session. "
         "Present 3 crop options (A, B, C) clearly. Explain why they fit the profile briefly. "
-        "Maintain a professional, expert, and concise tone."
+        "Maintain a professional, expert, and concise tone. "
+        "CRITICAL: ALWAYS respond in English. Final translation is handled externally."
     )
     
     prompt = f"Farmer Profile: {json.dumps(farmer)}\nOptions: {json.dumps(options)}"
@@ -192,7 +193,8 @@ def reasoning_node(state: AgentState) -> dict:
         "   🌱 Setup\n"
         "   ⚠ Risks\n"
         "4. Do NOT suggest new crops unless explicitly asked or physical constraints changed significantly.\n"
-        "5. Be concise and farmer-friendly."
+        "5. Be concise and farmer-friendly. "
+        "6. CRITICAL: ALWAYS respond in English. Final translation is handled externally."
     )
 
     history_context = f"Farmer: {json.dumps(farmer)}\nPast Decisions: {choices_str}\nContext Summary: {summary}"

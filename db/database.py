@@ -87,6 +87,7 @@ def init_db():
         npk_p FLOAT,
         npk_k FLOAT,
         soil_ph FLOAT,
+        language_preference VARCHAR(10) DEFAULT 'en',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """)
@@ -246,6 +247,15 @@ def get_farmer(farmer_id):
         for k, v in row.items():
             if hasattr(v, 'isoformat'):
                 row[k] = v.isoformat()
+        
+        # Parse JSON fields
+        for field in ("equipment", "soil_type_distribution"):
+            if field in row and isinstance(row[field], str):
+                try:
+                    row[field] = json.loads(row[field])
+                except:
+                    row[field] = [] if field == "equipment" else [{"type": "", "size": 0}]
+                    
     return row
 
 
@@ -295,7 +305,8 @@ def get_recommendations(farmer_id, limit=5):
 def update_farmer_profile(farmer_id, **kwargs):
     allowed = ["name", "land_size", "water_source", "budget", "risk_level",
                "equipment", "location", "soil_type", "soil_type_distribution",
-               "recent_pest_activity", "npk_n", "npk_p", "npk_k", "soil_ph"]
+               "recent_pest_activity", "npk_n", "npk_p", "npk_k", "soil_ph",
+               "language_preference"]
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:
         return
@@ -308,9 +319,13 @@ def update_farmer_profile(farmer_id, **kwargs):
 
     c = _conn()
     cur = c.cursor()
-    cols = ", ".join(f"{k}=%s" for k in updates)
+    
+    items = list(updates.items())
+    cols = ", ".join(f"{k}=%s" for k, v in items)
+    vals = [v for k, v in items]
+    
     cur.execute(f"UPDATE farmers SET {cols} WHERE id=%s",
-                list(updates.values()) + [farmer_id])
+                vals + [farmer_id])
     c.commit()
     cur.close()
     c.close()
