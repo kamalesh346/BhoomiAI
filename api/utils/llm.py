@@ -67,7 +67,7 @@ def _mock_generate(prompt: str, system: str = None) -> str:
     if "recommend" in p or "option" in p:
         return "Based on your profile, I recommend pulses or oilseeds for this season."
     elif "greet" in p or "namaste" in p or "hello" in p:
-        return "Namaste! I'm Digital Sarathi, your AI farming advisor."
+        return "Namaste! I'm BhoomiAI, your AI farming advisor."
     else:
         return "I am analyzing your farm profile to give you the best advice."
 

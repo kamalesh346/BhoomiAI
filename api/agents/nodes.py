@@ -26,23 +26,25 @@ def entry_node(state: AgentState) -> dict:
         if row and row.get("summary"):
             past_summary = row["summary"]
         
-        cur.execute("SELECT * FROM chat_choices WHERE chat_session_id=%s ORDER BY created_at ASC", (session_id,))
+        # Structured Memory: Fetch Crop Names
+        cur.execute("SELECT crop_name, selected_option FROM chat_choices WHERE chat_session_id=%s ORDER BY created_at ASC", (session_id,))
         choices = cur.fetchall()
         if choices:
-            for c_row in choices:
-                for k, v in c_row.items():
-                    if hasattr(v, 'isoformat'):
-                        c_row[k] = v.isoformat()
-            past_choices = list(choices)
+            past_choices = [c_row["crop_name"] for c_row in choices if c_row["crop_name"]]
         cur.close()
         c.close()
         
-    # Detect if user message implies a constraint change (Phase 4)
+    # Detect if user message implies a physical constraint change (Phase 4)
     constraint_change = False
     if state.get("user_input"):
-        prompt = f"Does this user message imply a change in their farming constraints (e.g. new equipment, more budget, different water source)? Message: '{state['user_input']}'"
-        res = generate_json_response(prompt, '{"change_detected": boolean, "reason": "string"}')
-        if res.get("change_detected"):
+        prompt = (
+            f"Analyze if this message mentions a change in PHYSICAL farming constraints "
+            f"(e.g. new borewell, different budget, new equipment, different water source). "
+            f"Do NOT trigger for 'change of mind' or 'selecting an option'. "
+            f"Message: '{state['user_input']}'"
+        )
+        res = generate_json_response(prompt, '{"physical_change_detected": boolean, "reason": "string"}')
+        if res.get("physical_change_detected"):
             constraint_change = True
 
     return {
@@ -57,39 +59,34 @@ def recommendation_node(state: AgentState) -> dict:
     farmer = state["farmer_profile"]
     pest_history = state["pest_history"]
     
-    # Run the 8-Agent Orchestrator (Phase 1 & 2 logic)
+    # Run the 8-Agent Orchestrator
     scored_crops = orchestrator_score_crops(farmer, pest_history)
-    
-    # Save Top 15-20 to state as cache
     viable_candidates = scored_crops[:20]
-    
-    # Take Top 3 for immediate presentation
     top_3 = viable_candidates[:3]
     
     options = []
     for i, crop in enumerate(top_3):
         label = f"{crop['name']} (Score: {int(crop['potential_score']*100)}%)"
-        desc = f"Suitability based on soil and climate. "
+        desc = f"Suitability based on soil and climate."
         if crop["required_setup"]:
-            desc += f"Requires {crop['required_setup']} for maximum yield."
-        if crop["warnings"]:
-            desc += f" Note: {crop['warnings'][0]}"
+            desc += f" Needs {crop['required_setup']}."
             
         options.append({
-            "id": chr(65 + i), # A, B, C
+            "id": chr(65 + i), 
             "label": label,
             "description": desc,
+            "crop_name": crop["name"],
             "crop_data": crop
         })
     
-    prompt = (
-        f"You are Digital Sarathi. An Indian agricultural expert. "
-        f"Present these 3 options to farmer {farmer.get('name')}. "
-        f"Highlight why they were chosen and mention any required setups (like Drip Irrigation) or subsidies. "
-        f"Options: {json.dumps(options)}"
+    system_msg = (
+        "You are BhoomiAI. Greet the farmer ONLY if this is the start of the session. "
+        "Present 3 crop options (A, B, C) clearly. Explain why they fit the profile briefly. "
+        "Maintain a professional, expert, and concise tone."
     )
     
-    ai_text = generate_response(prompt, system="Be encouraging and expert. Keep it professional and empathetic.")
+    prompt = f"Farmer Profile: {json.dumps(farmer)}\nOptions: {json.dumps(options)}"
+    ai_text = generate_response(prompt, system=system_msg)
     
     ai_message = {
         "id": str(uuid.uuid4()),
@@ -112,13 +109,23 @@ def decision_node(state: AgentState) -> dict:
     session_id = state["session_id"]
     message_id = state["message_id"]
     selected_option = state["selected_option"]
+    messages = state["messages"]
+    
+    selected_crop_name = "Unknown"
+    for msg in reversed(messages):
+        if msg.get("id") == message_id and "options" in msg:
+            for opt in msg["options"]:
+                if opt["id"] == selected_option:
+                    selected_crop_name = opt.get("crop_name", selected_option)
+                    break
+            break
     
     try:
         c = _conn()
         cur = c.cursor()
         cur.execute(
-            "INSERT INTO chat_choices (chat_session_id, message_id, selected_option) VALUES (%s, %s, %s)",
-            (session_id, message_id, selected_option)
+            "INSERT INTO chat_choices (chat_session_id, message_id, selected_option, crop_name) VALUES (%s, %s, %s, %s)",
+            (session_id, message_id, selected_option, selected_crop_name)
         )
         c.commit()
         cur.close()
@@ -126,7 +133,6 @@ def decision_node(state: AgentState) -> dict:
     except Exception as e:
         print(f"Error saving choice: {e}")
         
-    # generate dynamic metrics based on the selected candidate
     metrics = [
         {"subject": "Yield", "A": random.randint(70, 95), "fullMark": 100},
         {"subject": "Market", "A": random.randint(60, 90), "fullMark": 100},
@@ -134,67 +140,71 @@ def decision_node(state: AgentState) -> dict:
         {"subject": "Profit", "A": random.randint(65, 95), "fullMark": 100},
     ]
     
-    messages = state["messages"].copy()
-    messages.append({"role": "user", "content": f"I selected option {selected_option}."})
+    new_messages = messages.copy()
+    new_messages.append({"role": "user", "content": f"I selected option {selected_option}: {selected_crop_name}."})
     
-    return {"metrics": metrics, "messages": messages}
+    return {"metrics": metrics, "messages": new_messages, "past_choices": state["past_choices"] + [selected_crop_name]}
 
 def reasoning_node(state: AgentState) -> dict:
     farmer = state["farmer_profile"]
     summary = state["past_summary"]
-    choices = state["past_choices"]
+    choices = state.get("past_choices", [])
     messages = state["messages"].copy()
     viable_candidates = state.get("viable_candidates", [])
-    
     user_input = state.get("user_input") or ""
     
-    # Logic for "Show me more" (Phase 3)
+    # 1. Fallback / Alternatives check
     is_asking_for_more = False
     if user_input:
-        is_asking_for_more = any(phrase in user_input.lower() for phrase in ["other", "more", "different", "satisfied", "alternatives"])
+        is_asking_for_more = any(phrase in user_input.lower() for phrase in ["other options", "show options", "change crop", "more crops", "not satisfied"])
     
     if is_asking_for_more and len(viable_candidates) > 3:
-        # Fetch next 3 from cache
         next_3 = viable_candidates[3:6]
         options = []
         for i, crop in enumerate(next_3):
             options.append({
                 "id": chr(65 + i),
                 "label": f"{crop['name']}",
-                "description": f"Alternative option with potential score of {int(crop['potential_score']*100)}%"
+                "description": f"Alternative with potential score of {int(crop['potential_score']*100)}%",
+                "crop_name": crop["name"]
             })
-            
-        ai_text = f"I understand! Here are 3 other excellent options from my analysis that also fit your profile:"
         ai_msg = {
             "id": str(uuid.uuid4()),
             "role": "assistant",
-            "content": ai_text,
+            "content": "I understand. Here are 3 other suitable options for your consideration:",
             "options": options
         }
         messages.append({"role": "user", "content": user_input})
         messages.append(ai_msg)
         return {"messages": messages, "ai_response": ai_msg}
 
-    if state["selected_option"]:
-        system_prompt = (
-            f"You are an Indian agricultural advisor. Farmer: {json.dumps(farmer)}. "
-            f"Past context: {summary}. "
-            f"The user just selected option {state['selected_option']}. "
-            "Acknowledge the choice, provide a detailed success plan including any required setups (Drip Irrigation, etc.) and subsidies mentioned in the options."
-        )
-        message_to_send = f"I selected option {state['selected_option']}."
+    # 2. Main Implementation/Consultation Logic
+    choices_str = ", ".join(choices) if choices else "No crop selected yet"
+    
+    system_prompt = (
+        "You are BhoomiAI, a stateful agricultural advisor. "
+        "RULES:\n"
+        "1. Never repeat greetings (Namaste etc.) if the conversation is ongoing.\n"
+        "2. If the user refers to 'Option A/B/C', identify it from recent history and LOCK onto that crop.\n"
+        "3. Once a crop is selected, provide a plan using these headers:\n"
+        "   ✔ Plan\n"
+        "   💰 Budget\n"
+        "   🌱 Setup\n"
+        "   ⚠ Risks\n"
+        "4. Do NOT suggest new crops unless explicitly asked or physical constraints changed significantly.\n"
+        "5. Be concise and farmer-friendly."
+    )
+
+    history_context = f"Farmer: {json.dumps(farmer)}\nPast Decisions: {choices_str}\nContext Summary: {summary}"
+    
+    if state.get("selected_option"):
+        message_to_send = f"User selected option {state['selected_option']}."
     else:
         messages.append({"role": "user", "content": user_input})
-        system_prompt = (
-            f"You are an Indian agricultural advisor. Farmer: {json.dumps(farmer)}. "
-            f"Past context: {summary}. "
-            f"Past choices: {json.dumps(choices)}. "
-            "Provide helpful, concise agricultural advice tailored to the farmer's query and their farm's specifics (water, soil, budget, pest history)."
-        )
         message_to_send = user_input
 
-    context_msgs = [m["content"] for m in messages[-5:] if "content" in m]
-    full_prompt = "Recent chat history:\n" + "\n".join(context_msgs) + f"\n\nCurrent message: {message_to_send}"
+    context_msgs = [m["content"] for m in messages[-10:] if "content" in m]
+    full_prompt = f"{history_context}\n\nRecent Chat:\n" + "\n".join(context_msgs) + f"\n\nCurrent Input: {message_to_send}"
     
     ai_text = generate_response(full_prompt, system=system_prompt)
     
@@ -214,15 +224,21 @@ def memory_node(state: AgentState) -> dict:
     messages = state["messages"]
     past_summary = state["past_summary"]
     
-    if len(messages) > 6:
-        msgs_to_summarize = messages[:-5]
-        recent_msgs = messages[-5:]
+    if len(messages) > 10:
+        msgs_to_summarize = messages[:-10]
+        recent_msgs = messages[-10:]
         
         if msgs_to_summarize:
             text_to_summarize = "\n".join([f"{m['role']}: {m.get('content', '')}" for m in msgs_to_summarize])
-            prompt = f"Summarize the following chat history into a concise context for an agricultural advisor. Keep important details. Past summary: {past_summary}\n\nNew chat to add:\n{text_to_summarize}"
-            
-            new_summary = generate_response(prompt, system="You are a helpful assistant generating concise summaries.")
+            prompt = (
+                f"Summarize this interaction for a stateful advisor. Focus on:\n"
+                f"- Crops Suggested\n"
+                f"- Decisions Made\n"
+                f"- Current Goal\n\n"
+                f"Past summary: {past_summary}\n\n"
+                f"New interactions:\n{text_to_summarize}"
+            )
+            new_summary = generate_response(prompt, system="Generate a structured, technical agricultural summary.")
             return {"past_summary": new_summary, "messages": recent_msgs}
             
     return {}

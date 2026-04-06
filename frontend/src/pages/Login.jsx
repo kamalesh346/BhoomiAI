@@ -73,7 +73,7 @@ export default function Login() {
             <Wheat className="h-10 w-10 text-brand-600" />
           </div>
           <h2 className="mt-6 text-3xl font-bold tracking-tight text-gray-900">
-            Digital Sarathi
+            BhoomiAI
           </h2>
           <p className="mt-2 text-sm text-gray-600">
             Your AI-powered farming consultant

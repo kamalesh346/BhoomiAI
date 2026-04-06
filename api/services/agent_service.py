@@ -4,11 +4,17 @@ from db.database import _conn, create_new_chat_session, update_chat_session
 from api.agents.graph import agent_graph
 from api.agents.state import AgentState
 
-def get_session_state(session_id: int) -> tuple[list, str, dict]:
+def get_session_state(session_id: int) -> tuple[list, str, dict, list]:
     c = _conn()
     cur = c.cursor()
     cur.execute("SELECT messages, summary, context FROM chat_sessions WHERE id=%s", (session_id,))
     row = cur.fetchone()
+    
+    # Fetch past choices
+    cur.execute("SELECT crop_name FROM chat_choices WHERE chat_session_id=%s ORDER BY created_at ASC", (session_id,))
+    choice_rows = cur.fetchall()
+    past_choices = [r["crop_name"] for r in choice_rows if r["crop_name"]]
+    
     cur.close()
     c.close()
     if not row:
@@ -30,7 +36,7 @@ def get_session_state(session_id: int) -> tuple[list, str, dict]:
     if not isinstance(context, dict):
         context = {}
         
-    return messages, summary, context
+    return messages, summary, context, past_choices
 
 def handle_chat_start(farmer_id: int) -> Dict[str, Any]:
     session = create_new_chat_session(farmer_id)
@@ -49,7 +55,8 @@ def handle_chat_start(farmer_id: int) -> Dict[str, Any]:
         selected_option=None,
         message_id=None,
         ai_response=None,
-        metrics=None
+        metrics=None,
+        rerun_required=False
     )
     
     final_state = agent_graph.invoke(initial_state)
@@ -64,7 +71,7 @@ def handle_chat_start(farmer_id: int) -> Dict[str, Any]:
     }
 
 def handle_chat_message(farmer_id: int, session_id: int, message: str) -> Dict[str, Any]:
-    messages, summary, context = get_session_state(session_id)
+    messages, summary, context, past_choices = get_session_state(session_id)
     
     initial_state = AgentState(
         farmer_id=farmer_id,
@@ -72,7 +79,7 @@ def handle_chat_message(farmer_id: int, session_id: int, message: str) -> Dict[s
         farmer_profile={},
         pest_history=[],
         past_summary=summary,
-        past_choices=[],
+        past_choices=past_choices,
         messages=messages,
         candidate_crops=[],
         viable_candidates=context.get("viable_candidates", []),
@@ -104,7 +111,7 @@ def handle_chat_message(farmer_id: int, session_id: int, message: str) -> Dict[s
     return {"message": final_state["ai_response"]}
 
 def handle_chat_choice(farmer_id: int, session_id: int, message_id: str, selected_option: str) -> Dict[str, Any]:
-    messages, summary, context = get_session_state(session_id)
+    messages, summary, context, past_choices = get_session_state(session_id)
     
     initial_state = AgentState(
         farmer_id=farmer_id,
@@ -112,7 +119,7 @@ def handle_chat_choice(farmer_id: int, session_id: int, message_id: str, selecte
         farmer_profile={},
         pest_history=[],
         past_summary=summary,
-        past_choices=[],
+        past_choices=past_choices,
         messages=messages,
         candidate_crops=[],
         viable_candidates=context.get("viable_candidates", []),
@@ -120,7 +127,8 @@ def handle_chat_choice(farmer_id: int, session_id: int, message_id: str, selecte
         selected_option=selected_option,
         message_id=message_id,
         ai_response=None,
-        metrics=None
+        metrics=None,
+        rerun_required=False
     )
     
     final_state = agent_graph.invoke(initial_state)

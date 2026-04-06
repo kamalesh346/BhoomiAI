@@ -31,7 +31,7 @@ export default function ChatBubble({ role, content, isThinking, metrics }) {
         }`}
       >
         <div className="text-sm mb-1 opacity-80 font-medium">
-          {isUser ? '👨‍🌾 You' : '🌾 Digital Sarathi'}
+          {isUser ? '👨‍🌾 You' : '🌾 BhoomiAI'}
         </div>
         <div className="whitespace-pre-wrap leading-relaxed">{content}</div>
         

@@ -17,7 +17,7 @@ export default function Sidebar() {
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-100">
           <Wheat className="h-6 w-6 text-brand-600" />
         </div>
-        <span className="text-xl font-bold text-gray-900">Digital Sarathi</span>
+        <span className="text-xl font-bold text-gray-900">BhoomiAI</span>
       </div>
 
       <nav className="flex-1 space-y-2">

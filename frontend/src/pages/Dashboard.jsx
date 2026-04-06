@@ -194,7 +194,7 @@ export default function Dashboard() {
               <div className="max-w-lg text-center md:text-left">
                 <h2 className="text-2xl font-bold mb-2">Need advice for the next season?</h2>
                 <p className="text-brand-100 opacity-90">
-                  Talk to Digital Sarathi to get tailored recommendations based on your soil, budget, and past history.
+                  Talk to BhoomiAI to get tailored recommendations based on your soil, budget, and past history.
                 </p>
               </div>
               <button 

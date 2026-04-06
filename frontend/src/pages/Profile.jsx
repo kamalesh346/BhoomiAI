@@ -256,24 +256,6 @@ export default function Profile() {
                   </div>
                 </div>
               </section>
-
-              {/* <section className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <div className="flex items-center gap-2 font-bold text-gray-900 border-b pb-3 mb-4">
-                  <ShieldCheck size={18} className="text-brand-600" />
-                  Pest &  Activity
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">Recent Observations (One Paragraph)</label>
-                  <textarea 
-                    name="recent_pest_activity"
-                    value={formData.recent_pest_activity || ''} 
-                    onChange={handleChange} 
-                    className="input-field min-h-[100px] resize-none"
-                    placeholder="Describe any recent pest attacks, leaf spots, or unusual plant behavior..."
-                    maxLength={500}
-                  />
-                </div>
-              </section> */}
             </div>
 
             {/* Column 2: Farm Details & Equipment */}

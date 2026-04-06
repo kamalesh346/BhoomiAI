@@ -56,19 +56,10 @@ def update_schema():
 
     # Create chat_choices table
     try:
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS chat_choices (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            chat_session_id INT,
-            message_id VARCHAR(100),
-            selected_option VARCHAR(10),
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (chat_session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
-        )
-        """)
-        print("✅ Created 'chat_choices' table.")
-    except Exception as e:
-        print(f"❌ Failed to create 'chat_choices' table: {e}")
+        cur.execute("ALTER TABLE chat_choices ADD COLUMN crop_name VARCHAR(100);")
+        print("✅ Added 'crop_name' column to chat_choices.")
+    except Exception:
+        print("ℹ️ 'crop_name' column already exists.")
 
     c.commit()
     cur.close()
