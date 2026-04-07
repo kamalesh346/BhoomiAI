@@ -2,7 +2,7 @@ import traceback
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import auth, chat, recommendations
+from api.routes import auth, chat, recommendations, audio
 
 app = FastAPI(title="Digital Sarathi API")
 
@@ -26,6 +26,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(recommendations.router, prefix="/recommendations", tags=["recommendations"])
+app.include_router(audio.router, prefix="/audio", tags=["audio"])
 
 @app.get("/")
 def read_root():

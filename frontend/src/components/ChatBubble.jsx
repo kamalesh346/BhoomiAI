@@ -3,8 +3,9 @@ import {
   Radar, RadarChart, PolarGrid, 
   PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer 
 } from 'recharts';
+import { Volume2 } from 'lucide-react';
 
-export default function ChatBubble({ role, content, isThinking, metrics }) {
+export default function ChatBubble({ role, content, isThinking, metrics, onPlayVoice }) {
   const isUser = role === 'user';
   
   if (isThinking) {
@@ -24,14 +25,25 @@ export default function ChatBubble({ role, content, isThinking, metrics }) {
   return (
     <div className={`flex w-full mt-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div 
-        className={`max-w-[80%] rounded-2xl px-5 py-3 shadow-sm ${
+        className={`max-w-[80%] rounded-2xl px-5 py-3 shadow-sm relative group ${
           isUser 
             ? 'bg-brand-600 text-white rounded-br-none' 
             : 'bg-white border border-gray-200 text-gray-800 rounded-bl-none'
         }`}
       >
-        <div className="text-sm mb-1 opacity-80 font-medium">
-          {isUser ? '👨‍🌾 You' : '🌾 BhoomiAI'}
+        <div className="flex justify-between items-start mb-1">
+          <div className="text-sm opacity-80 font-medium">
+            {isUser ? '👨‍🌾 You' : '🌾 BhoomiAI'}
+          </div>
+          {!isUser && onPlayVoice && (
+            <button 
+              onClick={onPlayVoice}
+              className="p-1 rounded-full hover:bg-gray-100 text-gray-400 hover:text-brand-600 transition-colors"
+              title="Read aloud"
+            >
+              <Volume2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
         <div className="whitespace-pre-wrap leading-relaxed">{content}</div>
         

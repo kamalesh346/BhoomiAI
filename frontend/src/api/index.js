@@ -26,3 +26,19 @@ export const getChatHistory = (session_id, language = "en") => api.get(`/chat/hi
 
 export const getFarmHistory = (farmer_id) => api.get(`/recommendations/history/${farmer_id}`);
 export const addFarmHistory = (data) => api.post('/recommendations/history', data);
+
+// Audio API
+export const transcribeAudio = (blob) => {
+  const formData = new FormData();
+  // Groq prefers a filename with an extension
+  formData.append('file', blob, 'recording.webm');
+  return api.post('/audio/transcribe', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+};
+
+export const synthesizeSpeech = (text, language = 'en') => {
+  return api.post('/audio/synthesize', { text, language }, {
+    responseType: 'blob'
+  });
+};
