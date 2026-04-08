@@ -14,20 +14,20 @@ if __name__ == "__main__":
     print("Initializing database schema...")
     try:
         init_db()
-        print("✅ Schema created successfully.")
+        print("Schema created successfully.")
     except Exception as e:
-        print(f"❌ Schema creation failed: {e}")
+        print(f"Schema creation failed: {e}")
         sys.exit(1)
 
     print("Seeding test data...")
     try:
         seed_test_data()
-        print("✅ Test data seeded.")
-        print("\n📋 Test credentials:")
+        print("Test data seeded.")
+        print("\nTest credentials:")
         print("   Email:    test@farmer.com")
         print("   Password: test123")
     except Exception as e:
-        print(f"❌ Seeding failed: {e}")
+        print(f"Seeding failed: {e}")
         sys.exit(1)
 
-    print("\n🚀 Database ready! Run: streamlit run app.py")
+    print("\nDatabase ready! Run: streamlit run app.py")

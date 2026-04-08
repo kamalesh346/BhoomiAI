@@ -17,7 +17,10 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
-from config import DATA_DIR, FAISS_INDEX_PATH, EMBEDDING_MODEL
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data"
+FAISS_INDEX_PATH = str(Path(__file__).resolve().parent / "faiss_index")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 
 
 _vectorstore = None

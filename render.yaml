@@ -1,0 +1,63 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Digital Sarathi — Render Blueprint Configuration
+# ═══════════════════════════════════════════════════════════════════════════
+# This file automates the deployment of both the FastAPI backend and 
+# the React/Vite frontend to Render.
+
+services:
+  # ---------------------------------------------------------------------------
+  #  1. Backend (FastAPI API)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: digital-sarathi-api
+    env: python
+    region: ohio # Change to your preferred region (e.g. singapore, frankfurt, oregon)
+    plan: starter # Recommendation: 'Starter' or higher for AI models (RAM usage)
+    
+    # ─── Build, Pre-Deploy & Start ───────────────────────────────────────────
+    buildCommand: |
+      pip install -r requirements.txt
+      python scripts/build_rag.py
+    preDeployCommand: python scripts/init_db.py && python scripts/update_db.py
+    startCommand: python start_render.py
+    
+    # ─── Environment Variables ────────────────────────────────────────────────
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.10.0"
+      
+      - key: DATABASE_URL
+        sync: false # ⚠️ IMPORTANT: Needs an external MySQL database (e.g., PlanetScale, Aiven, or TidyDB)
+        
+      - key: GROQ_API_KEY
+        sync: false
+        
+      - key: OPENWEATHER_API_KEY
+        sync: false
+        
+      - key: SECRET_KEY
+        generateValue: true # Generates a random session key automatically
+
+  # ---------------------------------------------------------------------------
+  #  2. Frontend (React + Vite)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: digital-sarathi-frontend
+    env: static
+    region: ohio
+    plan: free
+    
+    # ─── Build & Publish ─────────────────────────────────────────────────────
+    buildCommand: cd frontend && npm install && npm run build
+    publishPath: frontend/dist
+    
+    # ─── Static Routing ──────────────────────────────────────────────────────
+    # Ensures React Router works correctly on page refresh
+    rewriteRules:
+      - source: /.*
+        destination: /index.html
+        
+    # ─── Environment Variables ────────────────────────────────────────────────
+    envVars:
+      - key: VITE_API_URL
+        sync: false # Set this to your backend URL (e.g. https://digital-sarathi-api.onrender.com)

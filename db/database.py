@@ -5,53 +5,65 @@ MySQL Database Layer for Digital Sarathi
 import hashlib
 import json
 import os
+from urllib.parse import parse_qs, unquote, urlparse
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 
-# ─── MySQL URL Parser (FIXED) ────────────────────────────────────────────────
 def _parse_mysql_url(url: str) -> dict:
     """
-    Parse mysql://user:password@host:port/dbname
-    into pymysql.connect(**kwargs)
+    Parse mysql://user:password@host:port/dbname into pymysql.connect kwargs.
+    Supports cloud-hosted URLs with query parameters like ssl-mode=REQUIRED.
     """
+    normalized_url = url.strip()
+    if not normalized_url:
+        raise ValueError("DATABASE_URL is empty")
 
-    url = url.replace("mysql://", "").replace("mysql+pymysql://", "")
+    parsed = urlparse(normalized_url)
+    if parsed.scheme not in {"mysql", "mysql+pymysql"}:
+        raise ValueError(f"Unsupported database scheme: {parsed.scheme}")
 
-    if "@" not in url:
-        raise ValueError("Invalid MySQL URL format")
+    if not parsed.hostname:
+        raise ValueError("Invalid MySQL URL: missing host")
 
-    # 🔥 FIX: rsplit instead of split
-    auth, rest = url.rsplit("@", 1)
-
-    user, password = (auth.split(":", 1) + [""])[:2]
-
-    if "/" not in rest:
+    database = parsed.path.lstrip("/")
+    if not database:
         raise ValueError("Invalid MySQL URL: missing database name")
 
-    host_port, db = rest.split("/", 1)
-
-    if ":" in host_port:
-        host, port_str = host_port.split(":", 1)
-        port = int(port_str)
-    else:
-        host, port = host_port, 3306
-
-    return dict(
-        host=host,
-        port=port,
-        user=user,
-        password=password,
-        database=db,
+    params = dict(
+        host=parsed.hostname,
+        port=parsed.port or 3306,
+        user=unquote(parsed.username or ""),
+        password=unquote(parsed.password or ""),
+        database=database,
         charset="utf8mb4",
-        cursorclass=__import__("pymysql").cursors.DictCursor
+        cursorclass=__import__("pymysql").cursors.DictCursor,
     )
 
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    ssl_mode = (query.get("ssl-mode", [""])[0] or query.get("ssl_mode", [""])[0]).upper()
+    if ssl_mode in {"REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY"}:
+        params["ssl"] = {}
 
-# ─── DB INIT ────────────────────────────────────────────────────────────────
+    connect_timeout = query.get("connect_timeout", [""])[0]
+    if connect_timeout:
+        params["connect_timeout"] = int(connect_timeout)
+
+    read_timeout = query.get("read_timeout", [""])[0]
+    if read_timeout:
+        params["read_timeout"] = int(read_timeout)
+
+    write_timeout = query.get("write_timeout", [""])[0]
+    if write_timeout:
+        params["write_timeout"] = int(write_timeout)
+
+    return params
+
+
 import pymysql
 import pymysql.cursors
 
@@ -64,12 +76,12 @@ def _hash(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
 
-# ─── TABLE SETUP ────────────────────────────────────────────────────────────
 def init_db():
     c = _conn()
     cur = c.cursor()
 
-    cur.execute("""
+    cur.execute(
+        """
     CREATE TABLE IF NOT EXISTS farmers (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
@@ -90,9 +102,11 @@ def init_db():
         language_preference VARCHAR(10) DEFAULT 'en',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-    """)
+    """
+    )
 
-    cur.execute("""
+    cur.execute(
+        """
     CREATE TABLE IF NOT EXISTS crop_history (
         id INT AUTO_INCREMENT PRIMARY KEY,
         farmer_id INT,
@@ -105,9 +119,27 @@ def init_db():
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (farmer_id) REFERENCES farmers(id) ON DELETE CASCADE
     )
-    """)
+    """
+    )
 
-    cur.execute("""
+    cur.execute(
+        """
+    CREATE TABLE IF NOT EXISTS pest_history (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        farmer_id INT,
+        pest_name VARCHAR(100) NOT NULL,
+        affected_crop VARCHAR(100),
+        severity VARCHAR(20),
+        observation_date DATE NOT NULL,
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (farmer_id) REFERENCES farmers(id) ON DELETE CASCADE
+    )
+    """
+    )
+
+    cur.execute(
+        """
     CREATE TABLE IF NOT EXISTS recommendations (
         id INT AUTO_INCREMENT PRIMARY KEY,
         farmer_id INT,
@@ -120,9 +152,11 @@ def init_db():
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (farmer_id) REFERENCES farmers(id) ON DELETE CASCADE
     )
-    """)
+    """
+    )
 
-    cur.execute("""
+    cur.execute(
+        """
     CREATE TABLE IF NOT EXISTS chat_sessions (
         id INT AUTO_INCREMENT PRIMARY KEY,
         farmer_id INT,
@@ -133,9 +167,11 @@ def init_db():
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (farmer_id) REFERENCES farmers(id) ON DELETE CASCADE
     )
-    """)
+    """
+    )
 
-    cur.execute("""
+    cur.execute(
+        """
     CREATE TABLE IF NOT EXISTS chat_choices (
         id INT AUTO_INCREMENT PRIMARY KEY,
         chat_session_id INT,
@@ -144,68 +180,75 @@ def init_db():
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (chat_session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
     )
-    """)
+    """
+    )
 
     c.commit()
     cur.close()
     c.close()
 
 
-# ─── SEED DATA ──────────────────────────────────────────────────────────────
 def seed_test_data():
     c = _conn()
     cur = c.cursor()
 
     cur.execute("SELECT id FROM farmers WHERE email=%s", ("test@farmer.com",))
     if cur.fetchone():
+        cur.close()
+        c.close()
         return
 
-    cur.execute("""
+    cur.execute(
+        """
     INSERT INTO farmers
     (name,email,password,land_size,water_source,budget,risk_level,
      equipment,location,soil_type,npk_n,npk_p,npk_k,soil_ph)
     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-    """, (
-        "Raju Patel",
-        "test@farmer.com",
-        _hash("test123"),
-        2.5,
-        "Canal",
-        80000,
-        "medium",
-        json.dumps(["Tractor"]),
-        "Maharashtra",
-        "Black Soil",
-        75, 35, 45, 6.8
-    ))
+    """,
+        (
+            "Raju Patel",
+            "test@farmer.com",
+            _hash("test123"),
+            2.5,
+            "Canal",
+            80000,
+            "medium",
+            json.dumps(["Tractor"]),
+            "Maharashtra",
+            "Black Soil",
+            75,
+            35,
+            45,
+            6.8,
+        ),
+    )
 
     c.commit()
     cur.close()
     c.close()
 
 
-# ─── CORE FUNCTIONS ─────────────────────────────────────────────────────────
 def create_farmer(name, email, password, location, land_size=1.0):
     c = _conn()
     cur = c.cursor()
 
     cur.execute(
         "INSERT INTO farmers (name,email,password,location,land_size) VALUES (%s,%s,%s,%s,%s)",
-        (name, email, _hash(password), location, land_size)
+        (name, email, _hash(password), location, land_size),
     )
     fid = cur.lastrowid
     c.commit()
-    
+
     cur.execute("SELECT * FROM farmers WHERE id=%s", (fid,))
     row = cur.fetchone()
-    
+
     cur.close()
     c.close()
-    
+
     if row:
         row = dict(row)
         for k, v in row.items():
-            if hasattr(v, 'isoformat'):
+            if hasattr(v, "isoformat"):
                 row[k] = v.isoformat()
     return row
 
@@ -216,7 +259,7 @@ def login_farmer(email, password):
 
     cur.execute(
         "SELECT * FROM farmers WHERE email=%s AND password=%s",
-        (email, _hash(password))
+        (email, _hash(password)),
     )
 
     row = cur.fetchone()
@@ -227,7 +270,7 @@ def login_farmer(email, password):
     if row:
         row = dict(row)
         for k, v in row.items():
-            if hasattr(v, 'isoformat'):
+            if hasattr(v, "isoformat"):
                 row[k] = v.isoformat()
     return row
 
@@ -245,39 +288,41 @@ def get_farmer(farmer_id):
     if row:
         row = dict(row)
         for k, v in row.items():
-            if hasattr(v, 'isoformat'):
+            if hasattr(v, "isoformat"):
                 row[k] = v.isoformat()
-        
-        # Parse JSON fields
+
         for field in ("equipment", "soil_type_distribution"):
             if field in row and isinstance(row[field], str):
                 try:
                     row[field] = json.loads(row[field])
-                except:
+                except Exception:
                     row[field] = [] if field == "equipment" else [{"type": "", "size": 0}]
-                    
+
     return row
 
 
-def save_recommendation(farmer_id, option_a, option_b, option_c,
-                        explanation, subsidy_info, pest_warnings):
-
+def save_recommendation(
+    farmer_id, option_a, option_b, option_c, explanation, subsidy_info, pest_warnings
+):
     c = _conn()
     cur = c.cursor()
 
-    cur.execute("""
+    cur.execute(
+        """
     INSERT INTO recommendations
     (farmer_id,option_a,option_b,option_c,explanation,subsidy_info,pest_warnings)
     VALUES (%s,%s,%s,%s,%s,%s,%s)
-    """, (
-        farmer_id,
-        json.dumps(option_a),
-        json.dumps(option_b),
-        json.dumps(option_c),
-        explanation,
-        subsidy_info,
-        pest_warnings
-    ))
+    """,
+        (
+            farmer_id,
+            json.dumps(option_a),
+            json.dumps(option_b),
+            json.dumps(option_c),
+            explanation,
+            subsidy_info,
+            pest_warnings,
+        ),
+    )
 
     c.commit()
     cur.close()
@@ -288,11 +333,14 @@ def get_recommendations(farmer_id, limit=5):
     c = _conn()
     cur = c.cursor()
 
-    cur.execute("""
+    cur.execute(
+        """
     SELECT * FROM recommendations
     WHERE farmer_id=%s ORDER BY created_at DESC
     LIMIT %s
-    """, (farmer_id, limit))
+    """,
+        (farmer_id, limit),
+    )
 
     rows = cur.fetchall()
 
@@ -303,29 +351,42 @@ def get_recommendations(farmer_id, limit=5):
 
 
 def update_farmer_profile(farmer_id, **kwargs):
-    allowed = ["name", "land_size", "water_source", "budget", "risk_level",
-               "equipment", "location", "soil_type", "soil_type_distribution",
-               "recent_pest_activity", "npk_n", "npk_p", "npk_k", "soil_ph",
-               "language_preference"]
+    allowed = [
+        "name",
+        "land_size",
+        "water_source",
+        "budget",
+        "risk_level",
+        "equipment",
+        "location",
+        "soil_type",
+        "soil_type_distribution",
+        "recent_pest_activity",
+        "npk_n",
+        "npk_p",
+        "npk_k",
+        "soil_ph",
+        "language_preference",
+    ]
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:
         return
-    
-    # Special handling for equipment and soil_type_distribution if they are lists/dicts
+
     if "equipment" in updates and not isinstance(updates["equipment"], str):
         updates["equipment"] = json.dumps(updates["equipment"])
-    if "soil_type_distribution" in updates and not isinstance(updates["soil_type_distribution"], str):
+    if "soil_type_distribution" in updates and not isinstance(
+        updates["soil_type_distribution"], str
+    ):
         updates["soil_type_distribution"] = json.dumps(updates["soil_type_distribution"])
 
     c = _conn()
     cur = c.cursor()
-    
+
     items = list(updates.items())
     cols = ", ".join(f"{k}=%s" for k, v in items)
     vals = [v for k, v in items]
-    
-    cur.execute(f"UPDATE farmers SET {cols} WHERE id=%s",
-                vals + [farmer_id])
+
+    cur.execute(f"UPDATE farmers SET {cols} WHERE id=%s", vals + [farmer_id])
     c.commit()
     cur.close()
     c.close()
@@ -340,38 +401,52 @@ def get_crop_history(farmer_id):
     c.close()
     return rows or []
 
+
 def get_pest_history(farmer_id):
     c = _conn()
     cur = c.cursor()
-    cur.execute("SELECT * FROM pest_history WHERE farmer_id=%s ORDER BY observation_date DESC", (farmer_id,))
+    cur.execute(
+        "SELECT * FROM pest_history WHERE farmer_id=%s ORDER BY observation_date DESC",
+        (farmer_id,),
+    )
     rows = cur.fetchall()
     cur.close()
     c.close()
     if rows:
         for row in rows:
             for k, v in row.items():
-                if hasattr(v, 'isoformat'):
+                if hasattr(v, "isoformat"):
                     row[k] = v.isoformat()
     return rows or []
 
-def add_pest_history(farmer_id, pest_name, affected_crop, severity, observation_date, description=""):
+
+def add_pest_history(
+    farmer_id, pest_name, affected_crop, severity, observation_date, description=""
+):
     c = _conn()
     cur = c.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO pest_history (farmer_id, pest_name, affected_crop, severity, observation_date, description)
         VALUES (%s,%s,%s,%s,%s,%s)
-    """, (farmer_id, pest_name, affected_crop, severity, observation_date, description))
+    """,
+        (farmer_id, pest_name, affected_crop, severity, observation_date, description),
+    )
     c.commit()
     cur.close()
     c.close()
 
+
 def add_crop_history(farmer_id, crop, season, year, yield_kg=None, income=None, notes=""):
     c = _conn()
     cur = c.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO crop_history (farmer_id,crop,season,year,yield_kg,income,notes)
         VALUES (%s,%s,%s,%s,%s,%s,%s)
-    """, (farmer_id, crop, season, year, yield_kg, income, notes))
+    """,
+        (farmer_id, crop, season, year, yield_kg, income, notes),
+    )
     c.commit()
     cur.close()
     c.close()
@@ -380,8 +455,10 @@ def add_crop_history(farmer_id, crop, season, year, yield_kg=None, income=None, 
 def create_new_chat_session(farmer_id):
     c = _conn()
     cur = c.cursor()
-    cur.execute("INSERT INTO chat_sessions (farmer_id, messages, context) VALUES (%s, %s, %s)", 
-                (farmer_id, json.dumps([]), json.dumps({})))
+    cur.execute(
+        "INSERT INTO chat_sessions (farmer_id, messages, context) VALUES (%s, %s, %s)",
+        (farmer_id, json.dumps([]), json.dumps({})),
+    )
     sid = cur.lastrowid
     c.commit()
     cur.execute("SELECT * FROM chat_sessions WHERE id=%s", (sid,))
@@ -389,17 +466,16 @@ def create_new_chat_session(farmer_id):
     cur.close()
     c.close()
 
-    # Ensure messages/context are dicts/lists
     if row:
         row = dict(row)
         for k, v in row.items():
-            if hasattr(v, 'isoformat'):
+            if hasattr(v, "isoformat"):
                 row[k] = v.isoformat()
         for field in ("messages", "context"):
             if isinstance(row.get(field), str):
                 try:
                     row[field] = json.loads(row[field])
-                except:
+                except Exception:
                     row[field] = [] if field == "messages" else {}
     return row
 
@@ -407,14 +483,19 @@ def create_new_chat_session(farmer_id):
 def get_or_create_chat_session(farmer_id):
     c = _conn()
     cur = c.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         SELECT * FROM chat_sessions WHERE farmer_id=%s
         ORDER BY created_at DESC LIMIT 1
-    """, (farmer_id,))
+    """,
+        (farmer_id,),
+    )
     row = cur.fetchone()
     if not row:
-        cur.execute("INSERT INTO chat_sessions (farmer_id, messages, context) VALUES (%s, %s, %s)", 
-                    (farmer_id, json.dumps([]), json.dumps({})))
+        cur.execute(
+            "INSERT INTO chat_sessions (farmer_id, messages, context) VALUES (%s, %s, %s)",
+            (farmer_id, json.dumps([]), json.dumps({})),
+        )
         sid = cur.lastrowid
         c.commit()
         cur.execute("SELECT * FROM chat_sessions WHERE id=%s", (sid,))
@@ -422,13 +503,12 @@ def get_or_create_chat_session(farmer_id):
     cur.close()
     c.close()
 
-    # Ensure messages/context are dicts/lists
     row = dict(row)
     for field in ("messages", "context"):
         if isinstance(row.get(field), str):
             try:
                 row[field] = json.loads(row[field])
-            except:
+            except Exception:
                 row[field] = [] if field == "messages" else {}
     return row
 
@@ -436,10 +516,13 @@ def get_or_create_chat_session(farmer_id):
 def update_chat_session(session_id, messages, context):
     c = _conn()
     cur = c.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         UPDATE chat_sessions SET messages=%s, context=%s
         WHERE id=%s
-    """, (json.dumps(messages), json.dumps(context), session_id))
+    """,
+        (json.dumps(messages), json.dumps(context), session_id),
+    )
     c.commit()
     cur.close()
     c.close()
