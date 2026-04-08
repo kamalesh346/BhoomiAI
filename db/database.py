@@ -76,6 +76,20 @@ def _hash(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
 
+def _serialize_farmer_row(row):
+    if not row:
+        return row
+
+    row = dict(row)
+    row.pop("password", None)
+
+    for k, v in row.items():
+        if hasattr(v, "isoformat"):
+            row[k] = v.isoformat()
+
+    return row
+
+
 def init_db():
     c = _conn()
     cur = c.cursor()
@@ -232,9 +246,15 @@ def create_farmer(name, email, password, location, land_size=1.0):
     c = _conn()
     cur = c.cursor()
 
+    cur.execute("SELECT id FROM farmers WHERE email=%s", (email,))
+    if cur.fetchone():
+        cur.close()
+        c.close()
+        raise ValueError("Email already exists")
+
     cur.execute(
         "INSERT INTO farmers (name,email,password,location,land_size) VALUES (%s,%s,%s,%s,%s)",
-        (name, email, _hash(password), location, land_size),
+        (name.strip(), email.strip(), _hash(password), location.strip(), land_size),
     )
     fid = cur.lastrowid
     c.commit()
@@ -245,12 +265,7 @@ def create_farmer(name, email, password, location, land_size=1.0):
     cur.close()
     c.close()
 
-    if row:
-        row = dict(row)
-        for k, v in row.items():
-            if hasattr(v, "isoformat"):
-                row[k] = v.isoformat()
-    return row
+    return _serialize_farmer_row(row)
 
 
 def login_farmer(email, password):
@@ -267,12 +282,7 @@ def login_farmer(email, password):
     cur.close()
     c.close()
 
-    if row:
-        row = dict(row)
-        for k, v in row.items():
-            if hasattr(v, "isoformat"):
-                row[k] = v.isoformat()
-    return row
+    return _serialize_farmer_row(row)
 
 
 def get_farmer(farmer_id):
@@ -286,11 +296,7 @@ def get_farmer(farmer_id):
     c.close()
 
     if row:
-        row = dict(row)
-        for k, v in row.items():
-            if hasattr(v, "isoformat"):
-                row[k] = v.isoformat()
-
+        row = _serialize_farmer_row(row)
         for field in ("equipment", "soil_type_distribution"):
             if field in row and isinstance(row[field], str):
                 try:

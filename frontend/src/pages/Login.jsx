@@ -49,7 +49,12 @@ export default function Login() {
       localStorage.setItem('farmer', JSON.stringify(res.data.farmer));
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Authentication failed');
+      const detail = err.response?.data?.detail || 'Authentication failed';
+      if (!isLogin && typeof detail === 'string' && detail.toLowerCase().includes('email already exists')) {
+        setError('An account with this email already exists. Please sign in instead.');
+      } else {
+        setError(detail);
+      }
     } finally {
       setLoading(false);
     }
