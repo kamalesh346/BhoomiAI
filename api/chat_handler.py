@@ -1,5 +1,5 @@
 """
-Central Chat Handler for Digital Sarathi.
+Central Chat Handler for BhoomiAI.
 Implements local multilingual support and voice output.
 """
 from api.utils.translator import detect_language, translate_to_english, translate_from_english

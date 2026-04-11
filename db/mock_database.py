@@ -1,5 +1,5 @@
 """
-Mock database layer for running Digital Sarathi without PostgreSQL.
+Mock database layer for running BhoomiAI without PostgreSQL.
 Useful for demos, testing, or environments without a DB.
 Activated automatically when DATABASE_URL is unreachable.
 """

@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  Digital Sarathi — Render Blueprint Configuration
+#  BhoomiAI — Render Blueprint Configuration
 # ═══════════════════════════════════════════════════════════════════════════
 # This file automates the deployment of both the FastAPI backend and 
 # the React/Vite frontend to Render.
@@ -9,7 +9,7 @@ services:
   #  1. Backend (FastAPI API)
   # ---------------------------------------------------------------------------
   - type: web
-    name: digital-sarathi-api
+    name: bhoomi-ai-api
     env: python
     region: ohio # Change to your preferred region (e.g. singapore, frankfurt, oregon)
     plan: starter # Recommendation: 'Starter' or higher for AI models (RAM usage)
@@ -42,7 +42,7 @@ services:
   #  2. Frontend (React + Vite)
   # ---------------------------------------------------------------------------
   - type: web
-    name: digital-sarathi-frontend
+    name: bhoomi-ai-frontend
     env: static
     region: ohio
     plan: free
@@ -60,4 +60,4 @@ services:
     # ─── Environment Variables ────────────────────────────────────────────────
     envVars:
       - key: VITE_API_URL
-        sync: false # Set this to your backend URL (e.g. https://digital-sarathi-api.onrender.com)
+        sync: false # Set this to your backend URL (e.g. https://bhoomi-ai-api.onrender.com)

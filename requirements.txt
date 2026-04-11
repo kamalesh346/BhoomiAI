@@ -1,4 +1,4 @@
-# Digital Sarathi v2.0 Requirements
+# BhoomiAI v2.0 Requirements
 
 # Local AI & ML
 torch>=2.0.0

@@ -1,3 +1,10 @@
+"""
+BhoomiAI Agent Nodes
+--------------------
+Contains the core logic for each node in the LangGraph workflow.
+Processes data fetching, recommendations, decisions, reasoning, and memory.
+"""
+
 import json
 import uuid
 import random
@@ -7,17 +14,21 @@ from db.database import get_farmer, get_pest_history, _conn
 from api.agents.specialized_agents import orchestrator_score_crops
 
 def entry_node(state: AgentState) -> dict:
+    """
+    Initial node for all chat sessions.
+    Fetches farmer data and determines if physical constraints have changed.
+    """
     farmer_id = state["farmer_id"]
     session_id = state.get("session_id")
     
-    # Fetch farmer profile
+    # 1. Fetch persistent farmer profile
     farmer = get_farmer(farmer_id)
     pest_history = get_pest_history(farmer_id)
     
     past_summary = state.get("past_summary", "")
     past_choices = []
     
-    # Fetch past summary & choices if session exists
+    # 2. Fetch past summary & choices from DB if session exists
     if session_id:
         c = _conn()
         cur = c.cursor()
@@ -26,7 +37,7 @@ def entry_node(state: AgentState) -> dict:
         if row and row.get("summary"):
             past_summary = row["summary"]
         
-        # Structured Memory: Fetch Crop Names
+        # Structured Memory: Fetch previously selected Crop Names
         cur.execute("SELECT crop_name, selected_option FROM chat_choices WHERE chat_session_id=%s ORDER BY created_at ASC", (session_id,))
         choices = cur.fetchall()
         if choices:
@@ -34,7 +45,8 @@ def entry_node(state: AgentState) -> dict:
         cur.close()
         c.close()
         
-    # Detect if user message implies a physical constraint change (Phase 4)
+    # 3. Detect Constraint Changes (Phase 4)
+    # Checks if the user's latest input implies a major change in physical capability.
     constraint_change = False
     if state.get("user_input"):
         prompt = (
@@ -56,14 +68,19 @@ def entry_node(state: AgentState) -> dict:
     }
 
 def recommendation_node(state: AgentState) -> dict:
+    """
+    Generates the top 3 crop recommendations using the multi-agent orchestrator.
+    Presents these options to the user.
+    """
     farmer = state["farmer_profile"]
     pest_history = state["pest_history"]
     
-    # Run the 8-Agent Orchestrator
+    # 1. Run the Multi-Agent Scorer (8 specialized agents)
     scored_crops = orchestrator_score_crops(farmer, pest_history)
     viable_candidates = scored_crops[:20]
     top_3 = viable_candidates[:3]
     
+    # 2. Format options for frontend rendering
     options = []
     for i, crop in enumerate(top_3):
         label = f"{crop['name']} (Score: {int(crop['potential_score']*100)}%)"
@@ -79,6 +96,7 @@ def recommendation_node(state: AgentState) -> dict:
             "crop_data": crop
         })
     
+    # 3. Generate natural language introduction
     system_msg = (
         "You are BhoomiAI. Greet the farmer ONLY if this is the start of the session. "
         "Present 3 crop options (A, B, C) clearly. Explain why they fit the profile briefly. "
@@ -107,11 +125,16 @@ def recommendation_node(state: AgentState) -> dict:
     }
 
 def decision_node(state: AgentState) -> dict:
+    """
+    Triggers when a user selects an option (A, B, or C).
+    Persists the choice and generates success metrics for visualization.
+    """
     session_id = state["session_id"]
     message_id = state["message_id"]
     selected_option = state["selected_option"]
     messages = state["messages"]
     
+    # 1. Map option ID back to crop name
     selected_crop_name = "Unknown"
     for msg in reversed(messages):
         if msg.get("id") == message_id and "options" in msg:
@@ -121,6 +144,7 @@ def decision_node(state: AgentState) -> dict:
                     break
             break
     
+    # 2. Persist choice to database
     try:
         c = _conn()
         cur = c.cursor()
@@ -134,6 +158,7 @@ def decision_node(state: AgentState) -> dict:
     except Exception as e:
         print(f"Error saving choice: {e}")
         
+    # 3. Generate simulation metrics for the selected crop
     metrics = [
         {"subject": "Yield", "A": random.randint(70, 95), "fullMark": 100},
         {"subject": "Market", "A": random.randint(60, 90), "fullMark": 100},
@@ -147,6 +172,10 @@ def decision_node(state: AgentState) -> dict:
     return {"metrics": metrics, "messages": new_messages, "past_choices": state["past_choices"] + [selected_crop_name]}
 
 def reasoning_node(state: AgentState) -> dict:
+    """
+    Handles ongoing consultation, provides alternative options, 
+    and generates detailed agricultural implementation plans.
+    """
     farmer = state["farmer_profile"]
     summary = state["past_summary"]
     choices = state.get("past_choices", [])
@@ -154,7 +183,7 @@ def reasoning_node(state: AgentState) -> dict:
     viable_candidates = state.get("viable_candidates", [])
     user_input = state.get("user_input") or ""
     
-    # 1. Fallback / Alternatives check
+    # 1. Check if user is asking for more alternatives
     is_asking_for_more = False
     if user_input:
         is_asking_for_more = any(phrase in user_input.lower() for phrase in ["other options", "show options", "change crop", "more crops", "not satisfied"])
@@ -179,7 +208,7 @@ def reasoning_node(state: AgentState) -> dict:
         messages.append(ai_msg)
         return {"messages": messages, "ai_response": ai_msg}
 
-    # 2. Main Implementation/Consultation Logic
+    # 2. Consultation Logic: Provide detailed plans or answer inquiries
     choices_str = ", ".join(choices) if choices else "No crop selected yet"
     
     system_prompt = (
@@ -205,6 +234,7 @@ def reasoning_node(state: AgentState) -> dict:
         messages.append({"role": "user", "content": user_input})
         message_to_send = user_input
 
+    # Optimize prompt context (last 10 messages)
     context_msgs = [m["content"] for m in messages[-10:] if "content" in m]
     full_prompt = f"{history_context}\n\nRecent Chat:\n" + "\n".join(context_msgs) + f"\n\nCurrent Input: {message_to_send}"
     
@@ -223,9 +253,14 @@ def reasoning_node(state: AgentState) -> dict:
     return {"messages": messages, "ai_response": ai_msg}
 
 def memory_node(state: AgentState) -> dict:
+    """
+    Compresses long conversations into a structured technical summary.
+    Maintains efficiency by pruning old message history while preserving context.
+    """
     messages = state["messages"]
     past_summary = state["past_summary"]
     
+    # Only summarize when history exceeds 10 turns
     if len(messages) > 10:
         msgs_to_summarize = messages[:-10]
         recent_msgs = messages[-10:]

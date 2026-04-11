@@ -1,5 +1,5 @@
 """
-MySQL Database Layer for Digital Sarathi
+MySQL Database Layer for BhoomiAI
 """
 
 import hashlib

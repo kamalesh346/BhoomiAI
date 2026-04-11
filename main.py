@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes import auth, chat, recommendations, audio, health
 
-app = FastAPI(title="Digital Sarathi API")
+app = FastAPI(title="BhoomiAI API")
 
 @app.middleware("http")
 async def catch_exceptions_middleware(request: Request, call_next):
@@ -33,7 +33,7 @@ app.include_router(health.router, prefix="/health", tags=["health"])
 
 @app.get("/")
 def read_root():
-    return {"message": "Digital Sarathi API is running"}
+    return {"message": "BhoomiAI API is running"}
 
 
 @app.head("/")
@@ -43,5 +43,5 @@ def read_root_head():
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "10000"))
-    print(f"Starting Digital Sarathi API on 0.0.0.0:{port}")
+    print(f"Starting BhoomiAI API on 0.0.0.0:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
